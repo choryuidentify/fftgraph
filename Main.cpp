@@ -1,7 +1,10 @@
 //---------------------------------------------------------------------------
+#if 0
 #include <windows.h>
 #define EXPORT(hr) extern "C" __declspec(dllexport) hr __stdcall
 #include "tp_stub.h"
+#endif
+#include "ncbind/ncbind.hpp"
 #include <math.h>
 //---------------------------------------------------------------------------
 
@@ -46,7 +49,7 @@ static void GetVisBuffer(iTJSDispatch2 * obj, tjs_int numsamples,
 	tTJSVariant val[4];
 	tTJSVariant *pval[4] = { val, val +1, val +2, val +3 };
 
-	val[0] = (tjs_int64)(tjs_int)SampleBuffer;
+	val[0] = (tjs_int64)(uintptr_t)SampleBuffer;
 	val[1] = (tjs_int64)numsamples;
 	val[2] = (tjs_int64)channels;
 	val[3] = (tjs_int64)aheadsamples;
@@ -54,13 +57,13 @@ static void GetVisBuffer(iTJSDispatch2 * obj, tjs_int numsamples,
 	tTJSVariant res;
 
 	static tjs_uint32 getVisBuffer_hint = 0;
-	if(TJS_SUCCEEDED(obj->FuncCall(0, L"getVisBuffer", &getVisBuffer_hint,
+	if(TJS_SUCCEEDED(obj->FuncCall(0, TJS_W("getVisBuffer"), &getVisBuffer_hint,
 		&res, 4, pval, obj)))
 	{
 		tjs_int ret = res;
 		if(ret < numsamples)
 		{
-			ZeroMemory(SampleBuffer, sizeof(tjs_int16) * SampleBufferLen);
+			memset(SampleBuffer, 0, sizeof(tjs_int16) * SampleBufferLen);
 		}
 	}
 }
@@ -313,7 +316,7 @@ void DrawFFTGraph(const FFTGraphParam & param)
 
 	tjs_int type = 0;
 	static tjs_uint32 type_hint = 0;
-	type = GetValueFromOptions(param.options, L"type", &type_hint, type);
+	type = GetValueFromOptions(param.options, TJS_W("type"), &type_hint, type);
 
 	switch(type)
 {
@@ -382,12 +385,12 @@ void DrawFFTGraph(const FFTGraphParam & param)
 
 		static tjs_uint32 hints[6];
 
-		division = GetValueFromOptions(param.options, L"division", hints + 0, division);
-		thick = GetValueFromOptions(param.options, L"thick", hints + 1, thick);
-		oncolor = GetValueFromOptions(param.options, L"oncolor", hints + 2, oncolor);
-		offcolor = GetValueFromOptions(param.options, L"offcolor", hints + 3, offcolor);
-		bgcolor = GetValueFromOptions(param.options, L"bgcolor", hints + 4, bgcolor);
-		peakcolor = GetValueFromOptions(param.options, L"peakcolor", hints + 5, peakcolor);
+		division = GetValueFromOptions(param.options, TJS_W("division"), hints + 0, division);
+		thick = GetValueFromOptions(param.options, TJS_W("thick"), hints + 1, thick);
+		oncolor = GetValueFromOptions(param.options, TJS_W("oncolor"), hints + 2, oncolor);
+		offcolor = GetValueFromOptions(param.options, TJS_W("offcolor"), hints + 3, offcolor);
+		bgcolor = GetValueFromOptions(param.options, TJS_W("bgcolor"), hints + 4, bgcolor);
+		peakcolor = GetValueFromOptions(param.options, TJS_W("peakcolor"), hints + 5, peakcolor);
 
 		DrawBarGraph(param, division, thick, oncolor, offcolor, bgcolor, peakcolor);
 	  }
@@ -489,7 +492,7 @@ class tDrawFFTGraphFunction : public tTJSDispatch
 			val[2] = (tjs_int64)fftparam.width;
 			val[3] = (tjs_int64)fftparam.height;
 			static tjs_uint32 update_hint = 0;
-			layerobj->FuncCall(0, L"update", &update_hint, NULL, 4, pval, layerobj);
+			layerobj->FuncCall(0, TJS_W("update"), &update_hint, NULL, 4, pval, layerobj);
 		}
 
 
@@ -502,6 +505,48 @@ class tDrawFFTGraphFunction : public tTJSDispatch
 
 
 
+static void PreRegistCallback()
+{
+
+	// TestFunction の作成と登録
+	tTJSVariant val;
+
+	// TJS のグローバルオブジェクトを取得する
+	iTJSDispatch2 * global = TVPGetScriptDispatch();
+
+	// 1 まずオブジェクトを作成
+	DrawFFTGraphFunction = new tDrawFFTGraphFunction();
+
+	// 2 DrawFFTGraphFunction を tTJSVariant 型に変換
+	val = tTJSVariant(DrawFFTGraphFunction);
+
+	// 3 すでに val が DrawFFTGraphFunction を保持しているので、
+	// DrawFFTGraphFunction は Release する
+	DrawFFTGraphFunction->Release();
+
+
+	// 4 global の PropSet メソッドを用い、オブジェクトを登録する
+	global->PropSet(
+		TJS_MEMBERENSURE, // メンバがなかった場合には作成するようにするフラグ
+		TJS_W("drawFFTGraph"), // メンバ名 ( かならず TJS_W( ) で囲む )
+		NULL, // ヒント ( 本来はメンバ名のハッシュ値だが、NULL でもよい )
+		&val, // 登録する値
+		global // コンテキスト ( global でよい )
+		);
+
+
+	// - global を Release する
+	global->Release();
+
+	// val をクリアする。
+	// これは必ず行う。そうしないと val が保持しているオブジェクト
+	// が Release されず、次に使う TVPPluginGlobalRefCount が正確にならない。
+	val.Clear();
+
+}
+
+NCB_PRE_REGIST_CALLBACK(PreRegistCallback);
+#if 0
 //---------------------------------------------------------------------------
 #pragma argsused
 int WINAPI DllEntryPoint(HINSTANCE hinst, unsigned long reason, void* lpReserved)
@@ -617,6 +662,7 @@ EXPORT(HRESULT) V2Unlink()
 	return S_OK;
 }
 //---------------------------------------------------------------------------
+#endif
 
 
 
